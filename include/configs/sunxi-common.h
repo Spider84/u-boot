@@ -242,7 +242,7 @@
 #define BOOTCMD_SUNXI_COMPAT
 #endif
 
-#include <config_distro_bootcmd.h>
+#include <config_router_t113_bootcmd.h>
 
 #ifdef CONFIG_USB_KEYBOARD
 #define CONSOLE_STDIN_SETTINGS \
@@ -292,10 +292,7 @@
 	MEM_LAYOUT_ENV_EXTRA_SETTINGS \
 	DFU_ALT_INFO_RAM \
 	"fdtfile=" FDTFILE "\0" \
-	"console=ttyS0,115200\0" \
-	"uuid_gpt_esp=" UUID_GPT_ESP "\0" \
-	"uuid_gpt_system=" UUID_GPT_SYSTEM "\0" \
-	"partitions=" PARTS_DEFAULT "\0" \
+	"console=ttyS0,"STR(CONFIG_BAUDRATE)"\0" \
 	BOOTCMD_SUNXI_COMPAT \
 	BOOTENV
 

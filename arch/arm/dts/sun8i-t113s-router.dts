@@ -1,0 +1,509 @@
+// Copyright (C) 2022 Arm Ltd.
+
+/dts-v1/;
+
+#include "sun8i-t113s.dtsi"
+
+#include <dt-bindings/gpio/gpio.h>
+#include <dt-bindings/input/input.h>
+#include <dt-bindings/leds/common.h>
+#include <dt-bindings/pwm/pwm.h>
+#include <dt-bindings/thermal/thermal.h>
+
+/ {
+    model = "T113 Router";
+
+    aliases {
+        serial0 = &uart0;
+        serial1 = &uart4;
+        spi0 = &spi0;
+        ethernet0 = &emac;
+    };
+
+    chosen {
+      stdout-path = "serial0:115200n8";
+    };
+
+    cpu_opp_table: cpu-opp-table {
+      compatible = "allwinner,sun20i-d1-operating-points",
+                   "allwinner,sun50i-h6-operating-points";
+      nvmem-cells = <&cpu_speed_grade>;
+
+      opp-1080000000 {
+        opp-hz = /bits/ 64 <1008000000>;
+        opp-microvolt = <900000 950000 1100000>;
+      };
+	  };
+
+    gpio-buttons {
+      compatible = "gpio-keys";
+
+      button-reset {
+        label = "reset";
+        linux,code = <KEY_RESTART>;
+			  gpios = <&pio 4 12 GPIO_ACTIVE_LOW>; //PE12
+			  debounce-interval = <60>;
+      };
+	  };
+
+    leds {
+        compatible = "gpio-leds";
+
+        mcu_led: led-0 {
+            color = <LED_COLOR_ID_GREEN>;
+            function = LED_FUNCTION_BOOT;
+            gpios = <&pio 5 3 GPIO_ACTIVE_HIGH>; /* PF3 */
+            linux,default-trigger = "pattern";
+            default-state = "on";
+        };
+    };
+
+    options {
+      u-boot {
+        compatible = "u-boot,config";
+        boot-led = <&mcu_led>;
+        boot-led-period-ms = <250>; // Blinks every 250ms
+/*        activity-led = <&mcu_led>;*/
+      };
+	  };
+
+  soc {
+		pwm: pwm@2000c00 {
+			compatible = "allwinner,sun20i-d1-pwm";
+			reg = <0x2000c00 0x400>;
+			clocks = <&ccu CLK_BUS_PWM>, <&dcxo>, <&ccu CLK_APB0>;
+			clock-names = "bus", "hosc", "apb";
+			resets = <&ccu RST_BUS_PWM>;
+			interrupts = <SOC_PERIPHERAL_IRQ(18) IRQ_TYPE_LEVEL_HIGH>;
+			#pwm-cells = <3>;
+			status = "disabled";
+		};
+
+		ths0: cpu-temperature-sensor@2009400 {
+			compatible = "allwinner,sun20i-d1-ths";
+			reg = <0x2009400 0x400>;
+			clocks = <&ccu CLK_BUS_THS>, <&dcxo>;
+			clock-names = "bus", "hosc";
+			resets = <&ccu RST_BUS_THS>;
+			interrupts = <SOC_PERIPHERAL_IRQ(58) IRQ_TYPE_LEVEL_HIGH>;
+			nvmem-cells = <&ths_calib>;
+			nvmem-cell-names = "calibration";
+			#thermal-sensor-cells = <0>;
+		};
+	};
+
+  ths1: thermistor {
+    compatible = "epcos,b57891s0103"; //b57891s0103 ~= NCP21XV103J03RA
+    pullup-uv = <3300000>;
+    pullup-ohm = <10000>;
+    pulldown-ohm = <0>;
+    io-channels = <&gpadc 0>;
+    #thermal-sensor-cells = <0>;
+  };
+
+  fan0: pwm-fan {
+    compatible = "pwm-fan";
+    cooling-levels = <0 102 170 230 255>;
+    pwms = <&pwm 3 20000 0>; //PWM3 50kHz
+    #cooling-cells = <2>;
+    fan-supply = <&reg_vcc5v>;
+  };
+
+  thermal-zones {
+    cpu_thermal: cpu-thermal {
+      polling-delay-passive = <250>; /* milliseconds */
+      polling-delay = <1000>; /* milliseconds */
+      thermal-sensors = <&ths0>;
+
+      trips {
+        cpu_target_0: cpu-target-0 {
+            hysteresis = <3000>;
+            temperature = <85000>;
+            type = "passive";
+        };
+
+        cpu_crit_0: cpu-crit-0 {
+            hysteresis = <0>;
+            temperature = <110000>;
+            type = "critical";
+        };
+      };
+
+      cooling-maps {
+        map0 {
+          trip = <&cpu_target_0>;
+          cooling-device = <&fan0 0 1>;
+        };
+      };
+    };
+
+    board_thermal: board-thermal {
+      polling-delay-passive = <1000>; /* milliseconds */
+      polling-delay = <2500>; /* milliseconds */
+      thermal-sensors = <&ths1>;
+
+      trips {
+          board_alert_0: board-alert-0 {
+              temperature = <100000>;
+              hysteresis = <1000>;
+              type = "passive";
+          };
+          board_crit_0: board-crit-0 {
+              temperature = <130000>;
+              hysteresis = <1000>;
+              type = "critical";
+          };
+      };
+    };
+  };
+
+  reg_vcc5v: regulator-5v {
+    compatible = "regulator-fixed";
+    regulator-name = "vcc-5v";
+    regulator-min-microvolt = <5000000>;
+    regulator-max-microvolt = <5000000>;
+    regulator-always-on;
+  };
+
+  reg_3v3: regulator-3v3 {
+    compatible = "regulator-fixed";
+    regulator-name = "vcc-3v3";
+    regulator-min-microvolt = <3300000>;
+    regulator-max-microvolt = <3300000>;
+    vin-supply = <&reg_vcc5v>;
+  };
+
+  reg_vcc_core: regulator-core {
+    compatible = "regulator-fixed";
+    regulator-name = "vcc-core";
+    regulator-min-microvolt = <950000>;
+    regulator-max-microvolt = <950000>;
+    vin-supply = <&reg_vcc5v>;
+  };
+
+  reg_vdd1v5: regulator-avdd {
+    compatible = "regulator-fixed";
+    regulator-name = "vdd1v5";
+    regulator-min-microvolt = <1500000>;
+    regulator-max-microvolt = <1500000>;
+    vin-supply = <&reg_vcc5v>;
+  };
+};
+
+&cpu0 {
+  cpu-supply = <&reg_vcc_core>;
+  clock-frequency = <1008000000>;
+  operating-points-v2 = <&cpu_opp_table>;
+  #cooling-cells = <0x02>;
+};
+
+&cpu1 {
+  cpu-supply = <&reg_vcc_core>;
+  clock-frequency = <1008000000>;
+  operating-points-v2 = <&cpu_opp_table>;
+  #cooling-cells = <0x02>;
+};
+
+&dcxo {
+  clock-frequency = <24000000>;
+};
+
+&ehci1 {
+  status = "okay";
+};
+
+&ohci1 {
+  status = "okay";
+};
+
+&i2c1 {
+  pinctrl-names = "default";
+  pinctrl-0 = <&i2c1_pe01_pin>;
+  status = "okay";
+  status = "okay";
+};
+
+&i2c2 {
+  pinctrl-names = "default";
+  pinctrl-0 = <&i2c2_pe45_pin>;
+  status = "okay";
+};
+
+&i2c3 {
+  pinctrl-names = "default";
+  pinctrl-0 = <&i2c3_pe67_pin>;
+  status = "okay";
+};
+
+&pio {
+  vcc-pb-supply = <&reg_3v3>;
+  vcc-pc-supply = <&reg_3v3>;
+  vcc-pd-supply = <&reg_3v3>;
+  vcc-pe-supply = <&reg_3v3>;
+  vcc-pf-supply = <&reg_3v3>;
+  vcc-pg-supply = <&reg_3v3>;
+
+  spi0_cs_pin: spi0-cs-pin {
+      pins = "PC3";
+      function = "spi0";
+  };
+
+  spi0_pc67_pin: spi0-pc67-pin {
+      pins = "PC6", "PC7";
+      function = "spi0";
+  };
+
+  rgmii_pg_pins: rgmii-pg-pins {
+    pins = "PG0", "PG1", "PG2", "PG3", "PG4",
+           "PG5", "PG6", "PG7", "PG8", "PG9",
+           "PG10", "PG11", "PG12", "PG13",
+           "PG14", "PG15";
+    function = "emac";
+  };
+
+  uart0_pf_pins: uart0-pf-pins {
+    pins = "PF2", "PF4";
+    function = "uart0";
+  };
+
+  uart4_pb_pins: uart4-pf-pins {
+    pins = "PB2", "PB3";
+    function = "uart4";
+  };
+
+  pwm3_pd19_pin: pwm3-pd19-pin {
+    pins = "PD19";
+    function = "pwm3";
+    output-enable;
+  };
+
+  i2c1_pe01_pin: i2c1-pe01-pin {
+    pins = "PE0", "PE1";
+    function = "i2c1";
+  };
+
+  i2c2_pe45_pin: i2c2-pe45-pin {
+    pins = "PE4", "PE5";
+    function = "i2c2";
+  };
+
+  i2c3_pe67_pin: i2c3-pe67-pin {
+    pins = "PE6", "PE7";
+    function = "i2c3";
+  };
+};
+
+&spi0  {
+    pinctrl-0 = <&spi0_pins>, <&spi0_cs_pin>, <&spi0_pc67_pin>;
+    pinctrl-names = "default";
+    status = "okay";
+    flash@0 {
+        #address-cells = <1>;
+        #size-cells = <1>;
+        compatible = "spi-nand";
+        reg = <0>; /* Chip select 0 */
+        spi-max-frequency = <50000000>;
+        spi-tx-bus-width = <1>;
+        spi-rx-bus-width = <1>;
+        status = "okay";
+        partitions {
+            compatible = "fixed-partitions";
+            #address-cells = <1>;
+            #size-cells = <1>;
+            partition@u-boot {
+                 label = "u-boot";
+                 reg = <0x0 0x00080000>;
+            };
+            partition@u-boot-env {
+                label = "u-boot-env";
+                reg = <0x00080000 0x00020000>;
+            };
+            partition@firmware {
+                label = "firmware";
+                reg = <0x000A0000 0x0FF60000>;
+            };
+        };
+    };
+};
+
+&mdio {
+  interrupt-parent = <&pio>;
+  interrupts = <5 6 IRQ_TYPE_LEVEL_LOW>; /* PF6 = INT_N */
+  interrupt-controller;
+  #interrupt-cells = <2>;
+
+  switch0: ethernet-switch@0 {
+    compatible = "marvell,mv88e6097";
+    reg = <0>;
+    reset-gpios = <&pio 5 5 GPIO_ACTIVE_LOW>; /* PF5 = RST_N */
+
+    ports {
+      #address-cells = <1>;
+      #size-cells = <0>;
+
+      port@0 {
+          reg = <0>;
+          label = "lan0";
+      };
+
+      port@1{
+          reg = <1>;
+          label = "lan1";
+      };
+
+      port@2 {
+          reg = <2>;
+          label = "lan2";
+      };
+
+      port@3 {
+          reg = <3>;
+          label = "lan3";
+      };
+
+      port@7 {
+          reg = <7>;
+          label = "lan4";
+      };
+
+      port@8 {
+          reg = <8>;
+          label = "sfp0";
+      };
+
+      port@9 {
+          reg = <9>;
+          label = "sfp1";
+      };
+
+      port@10 { 
+          reg = <10>;
+          label = "cpu";
+          ethernet = <&emac>;
+          phy-mode = "rgmii-id";
+          fixed-link {
+            speed = <1000>;
+            full-duplex;
+          };
+      };
+    };
+  };
+};
+
+&emac {
+  pinctrl-names = "default";
+  pinctrl-0 = <&rgmii_pg_pins>;
+  reset-gpios = <&pio 5 5 GPIO_ACTIVE_LOW>; /* PF5 = RST_N */
+  phy-mode = "rgmii-id";
+  phy-handle = <&switch0>;
+  phy-supply = <&reg_3v3>;
+  clocks = <&ccu CLK_BUS_EMAC>, <&ccu CLK_EMAC_25M>;
+  clock-names = "stmmaceth", "phy";
+  status = "ok";
+
+  fixed-link {
+    speed = <1000>;
+    full-duplex;
+  };
+};
+
+&uart0 {
+  pinctrl-names = "default";
+  pinctrl-0 = <&uart0_pf_pins>;
+  status = "okay";
+};
+
+&uart4 {
+  pinctrl-names = "default";
+  pinctrl-0 = <&uart4_pb_pins>;
+  status = "okay";
+};
+
+&usb_otg {
+  dr_mode = "peripheral";
+  status = "okay";
+};
+
+&usbphy {
+  usb0_vbus-supply = <&reg_vcc5v>;
+  usb1_vbus-supply = <&reg_vcc5v>;
+  status = "okay";
+};
+
+&wdt {
+  status = "okay";
+};
+
+&ths0 {
+  status = "okay";
+};
+
+&rtc {
+  status = "okay";
+};
+
+&sid {
+	cpu_speed_grade: cpu-speed-grade@0 {
+		reg = <0x0 0x2>;
+	};
+
+	ths_calib: ths-calib@14 {
+		reg = <0x14 0x4>;
+	};
+};
+
+&pwm {
+//  allwinner,pwm-channels = <1>;
+  pinctrl-names = "default";
+	pinctrl-0 = <&pwm3_pd19_pin>;
+  status = "okay";
+};
+
+&syscon {
+  regulators@3000150 {
+				compatible = "allwinner,sun20i-d1-system-ldos";
+				reg = <0x3000150 0x4>;
+
+				reg_ldoa: ldoa {
+				};
+
+				reg_ldob: ldob {
+				};
+			};
+};
+
+&reg_ldoa {
+  regulator-name = "vcc-io";
+	regulator-always-on;
+	regulator-min-microvolt = <1800000>;
+	regulator-max-microvolt = <1800000>;
+	ldo-in-supply = <&reg_3v3>;
+
+  regulator-state-mem {
+    regulator-on-in-suspend;
+  };
+};
+
+&reg_ldob {
+	regulator-name = "vcc-dram";
+	regulator-always-on;
+  regulator-min-microvolt = <1350000>;
+	regulator-max-microvolt = <1800000>;
+	ldo-in-supply = <&reg_3v3>;
+
+  regulator-state-mem {
+    regulator-on-in-suspend;
+  };
+};
+
+&gpadc {
+  #address-cells = <1>;
+  #size-cells = <0>;
+  status = "okay";
+
+  label = "board_temp";
+
+  channel@0 {
+    reg = <0>;
+  };
+};
