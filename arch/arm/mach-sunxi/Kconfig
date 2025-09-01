@@ -474,6 +474,10 @@ config MACH_SUN8I
 	default y if MACH_SUN8I_R40
 	default y if MACH_SUN8I_V3S
 
+config MACH_SUN8I_T113
+	bool "Use T113 CPU variant"
+	depends on MACH_SUN8I_R528
+
 config RESERVE_ALLWINNER_BOOT0_HEADER
 	bool "reserve space for Allwinner boot0 header"
 	select ENABLE_ARM_SOC_BOOT0_HOOK
